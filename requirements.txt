@@ -1,0 +1,59 @@
+# Biognosia RAG — production (CUDA) dependencies.
+#
+# torch is installed separately in the Dockerfile from the CUDA wheel index
+# (https://download.pytorch.org/whl/cu124), NOT from here, so the correct
+# GPU build is picked. Do not add a plain `torch` line here.
+
+# ── Web / server ──────────────────────────────────────────────────────────────
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.29,<1.0
+pydantic>=2.5,<3.0
+aiohttp>=3.9,<4.0
+
+# ── LLM clients ───────────────────────────────────────────────────────────────
+# Needed whenever this process owns its LLM: the plain-Python entry point and
+# the MCP server with MCP_LLM_MODE=standalone. Both imports are deferred to the
+# first call, so MCP sampling mode never loads them — but they are small, pure
+# Python, and shipping them keeps a single image able to run either way.
+#
+# openai floor is 1.55: the provider passes max_completion_tokens and reads
+# usage.completion_tokens_details.reasoning_tokens, and the SDK rejects keyword
+# arguments its typed signature does not know. One client covers every
+# OpenAI-compatible endpoint (OpenAI, Groq, vLLM, LM Studio, Ollama's /v1).
+openai>=1.55,<2.0
+anthropic>=0.40,<1.0
+
+# ── Runtime shims ─────────────────────────────────────────────────────────────
+# pymilvus 2.5.2 imports pkg_resources at load time, which newer Python/pip no
+# longer bundle — install setuptools explicitly so the import succeeds. Cap at
+# <81: setuptools 81 removed the bundled pkg_resources.
+setuptools>=68,<81
+
+# ── Database clients ──────────────────────────────────────────────────────────
+pymilvus==2.5.2
+motor>=3.3,<4.0
+pymongo>=4.6,<5.0
+neo4j>=5.0,<6.0
+redis>=4.5,<6.0
+elasticsearch>=8.0,<9.0
+
+# ── ML / embedding / rerank (raw torch + transformers, no sentence-transformers) ─
+# transformers is pinned exactly: the jina-reranker-v2 model loads its own
+# modeling code via trust_remote_code, which is sensitive to transformers
+# version drift. 4.57.6 is the version validated end-to-end against the live DBs.
+transformers==4.57.6
+# Required by the jina-reranker-v2 custom modeling code (trust_remote_code).
+einops>=0.7
+# Insurance: models use fast tokenizers today, but a slow XLM-RoBERTa tokenizer
+# fallback would hard-require sentencepiece — a real-mode-only failure otherwise.
+sentencepiece>=0.1.99
+numpy>=1.26,<2.0
+nltk>=3.8,<4.0
+tiktoken>=0.6,<1.0
+
+# ── Text / parsing / misc runtime helpers (deferred imports on active paths) ──
+beautifulsoup4>=4.12,<5.0
+json_repair>=0.25
+nest_asyncio>=1.6,<2.0
+pandas>=2.0,<3.0
+setproctitle>=1.3,<2.0

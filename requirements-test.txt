@@ -1,0 +1,11 @@
+# Biognosia RAG — slim test image dependencies (MCP_TEST_MODE=1).
+#
+# Test mode skips RAGApp initialization and defers the torch/transformers/DB
+# import chain, so the only thing needed to serve the MCP handshake is the web
+# stack. This keeps the test image tiny and fast to build.
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.29,<1.0
+pydantic>=2.5,<3.0
+# Pulled in by src_rag_web.llm.external_provider when the (deferred) sampling
+# provider is imported on the first tools/call. Small, pure-python — no torch.
+aiohttp>=3.9,<4.0

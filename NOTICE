@@ -1,0 +1,61 @@
+Biognosia RAG
+Copyright (c) 2025 Tin Nguyen Lab
+
+This product is licensed under the MIT License; see LICENSE.
+
+--------------------------------------------------------------------------------
+Third-party source code
+--------------------------------------------------------------------------------
+
+Portions of the retrieval and query code in src_rag_web/ are adapted from
+LightRAG, which is distributed under the MIT License.
+
+    LightRAG — https://github.com/HKUDS/LightRAG
+    Copyright (c) 2024 the LightRAG authors
+    Licensed under the MIT License.
+
+--------------------------------------------------------------------------------
+Third-party models
+--------------------------------------------------------------------------------
+
+This software downloads and runs the following pre-trained models. They are NOT
+distributed as part of this repository; each is fetched from the HuggingFace Hub
+at build time (Docker) or at first use (plain Python), and each remains subject
+to its own licence. Licences below were checked against the model cards on
+2026-07-31; consult the model pages for the authoritative and current terms.
+
+  BAAI/bge-m3
+      Role:    chunk and stage-2 embeddings (1024-dim)
+      Licence: MIT
+      https://huggingface.co/BAAI/bge-m3
+
+  ncbi/MedCPT-Query-Encoder
+      Role:    entity-label embeddings (768-dim)
+      Licence: public domain (U.S. National Library of Medicine / NCBI).
+               The model card carries a research disclaimer: its output is not
+               intended for direct diagnostic use or medical decision-making
+               without review by a clinical professional.
+      https://huggingface.co/ncbi/MedCPT-Query-Encoder
+
+  jinaai/jina-reranker-v2-base-multilingual
+      Role:    stage-2 reranking
+      Licence: CC-BY-NC-4.0  ***NON-COMMERCIAL USE ONLY***
+               The model card states it is licensed for research and evaluation
+               purposes; for commercial use, refer to Jina AI's commercial
+               offerings. Nothing in this repository enforces that restriction —
+               downloading the model requires no agreement step — so complying
+               with it is the responsibility of whoever runs this software.
+      https://huggingface.co/jinaai/jina-reranker-v2-base-multilingual
+
+  cross-encoder/ms-marco-TinyBERT-L2-v2
+      Role:    stage-1 reranking (candidate filtering)
+      Licence: Apache-2.0
+      https://huggingface.co/cross-encoder/ms-marco-TinyBERT-L2-v2
+
+--------------------------------------------------------------------------------
+Knowledge base
+--------------------------------------------------------------------------------
+
+The biomedical knowledge base this software queries is not contained in this
+repository and is not covered by the licence above. See "Data availability" in
+README.md.

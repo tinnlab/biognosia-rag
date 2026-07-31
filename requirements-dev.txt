@@ -1,0 +1,7 @@
+# Test dependencies. The suite runs in MCP_TEST_MODE, so it needs the slim
+# runtime deps plus pytest/httpx:
+#   pip install -r requirements-test.txt -r requirements-dev.txt
+#   pytest
+-r requirements-test.txt
+pytest>=8.0
+httpx>=0.27

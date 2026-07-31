@@ -1,0 +1,16 @@
+.git
+.gitignore
+**/__pycache__
+**/*.pyc
+*.egg-info
+build/
+dist/
+log/
+data/
+.env
+.env.*
+!.env.example
+README.md
+docker-compose.yml
+run.sh
+Dockerfile*

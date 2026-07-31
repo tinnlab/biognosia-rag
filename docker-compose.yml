@@ -1,0 +1,83 @@
+# Biognosia RAG — application compose. This defines the server only; it holds no
+# database services and connects out to the knowledge-base endpoints configured
+# in .env.
+#
+#   Configure:  cp .env.example .env  &&  edit .env
+#   Build+run:  sudo docker compose up --build -d
+#
+# Build: the image bakes four HuggingFace models, one of which is gated, so the
+# build needs HF_TOKEN. It is read from .env (compose loads that file for
+# variable interpolation) and passed as a build argument; the running container
+# does not need it, because the image sets HF_HUB_OFFLINE=1. See README.md.
+#
+# GPU: needs the NVIDIA Container Toolkit with a CDI spec on the host
+# (`sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml`). The GPUs are
+# requested via the CDI `devices:` entry below.
+services:
+  biognosia-rag:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        HF_TOKEN: "${HF_TOKEN:-}"
+    image: biognosia-rag:latest
+    container_name: biognosia-rag
+    restart: unless-stopped
+    # Published on all interfaces for convenience. If the host is not firewalled,
+    # bind to a specific interface (e.g. "127.0.0.1:8081:8081") and/or set
+    # MCP_AUTH_TOKEN — the /mcp endpoint is unauthenticated by default.
+    ports:
+      - "${BIOGNOSIA_HOST_PORT:-8081}:8081"
+    env_file:
+      - .env
+    # `host.docker.internal` resolves to the host's gateway address from inside
+    # the container. Only needed if you point any BIOGNOSIA_* endpoint (or an
+    # OpenAI-compatible LLM base_url) at a service listening on this machine
+    # rather than at a remote host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # NOTE: intentionally NO named volume over /home/app/.cache/huggingface. All
+    # model weights are baked into the image and loaded fully offline
+    # (HF_HUB_OFFLINE=1), so no runtime download and no persistence are needed. A
+    # persistent volume here is actively harmful: Docker only seeds an *empty*
+    # named volume from the image, so a stale volume from an earlier (pre-baking)
+    # deploy shadows the baked cache — e.g. an old bin-only BAAI/bge-m3 hides the
+    # baked model.safetensors, sending the offline load into transformers'
+    # safetensors auto-conversion (an HF API call) -> OfflineModeIsEnabled ->
+    # startup crash. Keeping the cache in the image guarantees the exact baked
+    # models are always used.
+    # The two-stage reranker spawns ~17 worker processes that share CPU tensors
+    # via /dev/shm; Docker's 64 MB default can trigger Bus errors under load.
+    shm_size: "1gb"
+    # Hardening: drop all Linux capabilities and block privilege escalation.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # GPU access via CDI (embedding + rerank run on CUDA). Requires the host CDI
+    # spec above. Per-model placement is controlled by the app device vars
+    # (BIOGNOSIA_EMBEDDING_DEVICE / BIOGNOSIA_RERANK_DEVICE /
+    # BIOGNOSIA_RERANK_STAGE1_DEVICE), NOT by this device list.
+    #
+    # By default ALL GPUs are exposed and the device vars select among them by
+    # ordinal (cuda:2 = physical GPU 2) — the normal deployment, and the only one
+    # that can spread models across cards.
+    #
+    # BIOGNOSIA_GPU_DEVICE is an OPTIONAL tightening for hosts shared with other
+    # tenants — e.g. `BIOGNOSIA_GPU_DEVICE=nvidia.com/gpu=2` limits visibility to
+    # that card, so no misconfiguration can allocate on a neighbour's GPU (and it
+    # replaces the docker-compose.override.yml that host-specific pinning used to
+    # need). It RENUMBERS the devices: a container given one card sees it as
+    # cuda:0 whatever its physical index, so the device vars must then use the
+    # VISIBLE ordinal. Do not combine it with a matching physical ordinal
+    # (…gpu=2 plus cuda:2 fails with "invalid device ordinal").
+    devices:
+      - "${BIOGNOSIA_GPU_DEVICE:-nvidia.com/gpu=all}"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 5s
+      # Generous margin: weights are baked in, but loading ~5 GB onto the GPU and
+      # starting the reranker worker pools still takes a while before /health.
+      start_period: 600s
+      retries: 10

@@ -1,0 +1,27 @@
+# Secrets / local env
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Runtime artifacts
+log/
+data/
+profiles/
+*.log
+.pytest_cache/
+
+# Local overrides (host-specific, not for commit)
+docker-compose.override.yml
+config/rag-web.local.conf
+
+# Agent/editor scratch
+.claude/

@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Biognosia RAG: retrieval-augmented generation over a biomedical literature knowledge base"
+abstract: >-
+  Retrieval and serving code for a biomedical retrieval-augmented generation
+  system combining dense vector search (Milvus), a knowledge graph (Neo4j),
+  BM25/hybrid keyword search (Elasticsearch) and paper metadata (MongoDB), with
+  two-stage cross-encoder reranking and grounded, per-passage citations. Usable
+  as a Python library or as an MCP server.
+type: software
+license: MIT
+repository-code: "https://github.com/tinnlab/biognosia-rag"
+date-released: 2025-01-01
+version: "1.0.0"
+
+# TODO before publication: replace the placeholder author below with the
+# paper's author list, e.g.
+#   authors:
+#     - family-names: ...
+#       given-names: ...
+#       orcid: "https://orcid.org/0000-0000-0000-0000"
+authors:
+  - name: "Tin Nguyen Lab"
+
+# The accompanying paper is under submission. No DOI has been issued, and none
+# is claimed here. Add `doi:` and a `preferred-citation:` block once it exists.
