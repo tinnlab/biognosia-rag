@@ -143,7 +143,20 @@ async def lifespan(app: FastAPI):
         )
 
     rag_app = RAGApp(config_path=config_path, skip_llm=(llm_mode == "sampling"))
-    await rag_app.initialize()
+    try:
+        await rag_app.initialize()
+    except Exception:
+        # initialize() starts the reranker worker pools — separate processes,
+        # each holding a CUDA context — before it connects to the stores. A
+        # failure part-way through (an unreachable endpoint, a missing Milvus
+        # collection) would otherwise leave those processes running and holding
+        # GPU memory: they outlive this one, so a crash-looping container leaks
+        # several GB of VRAM per attempt. close() guards every component and is
+        # safe on a partial init.
+        logger.exception("Initialization failed; releasing partially started resources")
+        await rag_app.close()
+        raise
+
     app.state.rag_app = rag_app
     logger.info("MCP server ready")
 

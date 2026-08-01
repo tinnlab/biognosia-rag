@@ -92,8 +92,11 @@ layer over a knowledge base built elsewhere.
 
 **Hardware**
 
-- An NVIDIA GPU. The embedding and reranking models need roughly **10 GB** of
-  VRAM with the recommended 4 + 4 rerank workers, ~16.5 GB at the defaults.
+- An NVIDIA GPU. The models occupy roughly **10 GB** with the recommended 4 + 4
+  rerank workers, but **peak usage while reranking a real query reached about
+  84 GB** in our measurement — see
+  [sizing](#choosing-a-gpu-and-sizing-the-rerank-pools) before choosing a card,
+  and turn the batch settings down if you have less.
 - ~10 GB of disk for the model weights, or ~22 GB for the Docker image (which
   bakes them in along with CUDA and torch).
 - The knowledge-base endpoints you will query (see
@@ -159,8 +162,9 @@ python -m nltk.downloader punkt punkt_tab stopwords \
 cp .env.example .env
 ```
 
-`examples/query.py` reads `.env` if `python-dotenv` is installed
-(`pip install python-dotenv`); otherwise export the variables into your shell.
+`examples/query.py` loads `.env` automatically (`python-dotenv` arrives with
+`uvicorn[standard]`); if you strip that dependency, export the variables into
+your shell instead.
 
 Now edit `.env`. Everything you must change is in the **`FILL THESE IN`** block
 at the very top: the knowledge-base endpoints, your HuggingFace token, and your
@@ -297,6 +301,12 @@ as the starting point.
 | `BIOGNOSIA_LLM_TEMPERATURE` / `_TOP_P` | omitted entirely when unset, which is what reasoning models that reject them need | unset |
 | `BIOGNOSIA_LLM_MAX_TOKENS` / `_MAX_COMPLETION_TOKENS` | output cap; setting the latter makes the former ignored | unset |
 
+If `BIOGNOSIA_LLM_API_KEY` is unset, the provider falls back to the conventional
+variables — `OPENAI_API_KEY` / `GROQ_API_KEY` / `ANTHROPIC_API_KEY`, then
+`LLM_API_KEY`. Worth knowing if you already have one of those exported: it will
+be used silently. When a `BIOGNOSIA_LLM_BASE_URL` is set and no key is found
+anywhere, a placeholder is sent, since local endpoints typically require none.
+
 **Server** — MCP mode only.
 
 | Variable | Purpose | Default |
@@ -305,6 +315,7 @@ as the starting point.
 | `MCP_RAG_CONFIG_PATH` | config file path | `config/rag-web.conf` |
 | `MCP_LOG_LEVEL` / `MCP_LOG_FILE` | logging | `INFO` / console |
 | `MCP_TEST_MODE` | `1` skips all databases, models and GPU; handshake only | `0` |
+| `MCP_TEST_PROMPT` | prompt used for the test-mode round-trip | a fixed "reply PONG" string |
 | `MCP_AUTH_TOKEN` | require `Authorization: Bearer <token>` on `/mcp` | off |
 | `MCP_PROTOCOL_VERSION_FALLBACK` | version to negotiate when the client omits or sends an unknown one | `2025-11-25` |
 | `MCP_RESPONSE_LOG_DIR` | directory for full-payload dumps | off |
@@ -328,20 +339,35 @@ as the starting point.
 ## Choosing a GPU and sizing the rerank pools
 
 Each rerank worker is a **separate process** holding its own CUDA context and
-model copy, so the two `*_NUM_WORKERS` variables drive VRAM more or less
-directly. Approximate measurements on an H200:
+model copy, so the two `*_NUM_WORKERS` variables drive memory directly. Model
+residency, measured on an H200:
 
 | Component | Per unit | 4 + 4 workers |
 |-----------|----------|---------------|
 | main process (embedding + stage-2 model) | ~3.7 GB | 3.7 GB |
 | stage-2 rerank worker | ~1.1 GB | 4.3 GB |
 | stage-1 rerank worker | ~0.5 GB | 2.1 GB |
-| **total** | | **~10 GB** |
+| **resident total** | | **~10 GB** |
 
-The defaults (8 + 8) take about 16.5 GB. `rag-web.conf`'s own guidance is "2-4
-for GPU (due to VRAM limits)", so 4 + 4 is a good starting point on a shared
-card; end-to-end latency is dominated by the LLM calls rather than by reranking,
-so smaller pools cost little on typical queries.
+> ⚠️ **Do not size your GPU from that table — it counts only the weights sitting
+> in memory, not the activations while reranking.** Measured on a real query
+> against a full corpus with `4 + 4` workers, peak usage reached **about 84 GB**,
+> returning to baseline afterwards. The peak comes from the reranker running
+> large batches over a large candidate pool: stage 1 scores up to
+> `candidate_top_k` (2000) passages at `stage1_batch_size` 512 ×
+> `stage1_max_length` 512 across its workers, and stage 2 runs at `batch_size`
+> 512 × `max_length` 1024. On a card with less memory than that, reduce
+> `stage1_batch_size` and `batch_size` first (they dominate), then
+> `candidate_top_k` and `stage1_top_k`, then the worker counts.
+>
+> Peak scales with how much the corpus actually returns, so a small or empty
+> knowledge base will look far cheaper than a production one. Budget from the
+> batch settings, not from a quiet run.
+
+The worker defaults (8 + 8) hold about 16.5 GB resident. `rag-web.conf`'s own
+guidance is "2-4 for GPU (due to VRAM limits)", so 4 + 4 is a reasonable
+starting point on a shared card; end-to-end latency is dominated by the LLM
+calls rather than by reranking, so smaller pools cost little on typical queries.
 
 **Selecting a card.** By default every GPU is visible and the `*_DEVICE`
 variables pick among them by ordinal — the normal approach, and the only one

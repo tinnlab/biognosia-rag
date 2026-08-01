@@ -54,10 +54,17 @@ async def run(question: str) -> int:
         skip_llm=False,
     )
 
-    # Loads the embedding and reranker models onto the GPU and connects to every
-    # store, so the first call takes a while.
-    await app.initialize()
+    # initialize() is INSIDE the try, deliberately. It starts the reranker worker
+    # pools — separate processes, each holding a CUDA context — before it connects
+    # to the stores, so a connection failure part-way through leaves those
+    # processes running and holding GPU memory. They outlive this one (killing the
+    # parent does not reap multiprocessing children), so without close() on the
+    # error path a failed first run silently leaks several GB of VRAM. close()
+    # guards every component individually and is safe on a partial init.
     try:
+        # Loads the embedding and reranker models onto the GPU and connects to
+        # every store, so the first call takes a while.
+        await app.initialize()
         result = await app.query(query_text=question, mode="auto")
     finally:
         await app.close()
