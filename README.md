@@ -191,11 +191,20 @@ from src_rag_web.app import RAGApp
 app = RAGApp(config_path="config/rag-web.conf", skip_llm=False)
 await app.initialize()                       # loads models, connects to the stores
 result = await app.query(query_text=question, mode="auto")
-print(result["response"])                    # answer, with [^n] footnotes
+print(result["response"])                    # answer, citing passages as [C1], [C2], ...
 for ref in result["references"]:             # the passages it was grounded in
-    print(ref["handle"], ref["id"])
+    print(ref["handle"], ref["id"])          # -> C1 chunk-<paper hash>-<n>
 await app.close()
 ```
+
+The library returns the answer with the **passage handles** the model cited
+(`[C1]`, `[C2]`, …) plus a `references` list mapping each handle to its passage
+id; the first 40 hex characters of that id are the paper's identifier. Turning
+those into numbered footnotes with full bibliographic entries — looking the
+papers up in MongoDB, grouping passages from the same paper under one number,
+and dropping any handle the model invented — is done by the MCP layer
+(`_resolve_footnotes`). If you want formatted citations rather than handles,
+either run the MCP server or call that resolver yourself.
 
 `skip_llm=False` is what makes this process own its LLM provider, built from the
 `BIOGNOSIA_LLM_*` settings. Read `examples/query.py` for the runnable version.
