@@ -1,8 +1,9 @@
 """Async MongoDB adapter for paper metadata lookups."""
 
 import logging
-import re
 from typing import Any
+
+from .._redaction import redact_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +47,7 @@ class MongoStorage:
 
         # Verify connectivity
         await self._client.admin.command("ping")
-        # Redact any embedded credentials (user:pass@) before logging the URI.
-        safe_uri = re.sub(r"://[^/@]*@", "://***@", uri)
-        logger.info(f"MongoDB connected: {safe_uri} / {database}.{collection_name}")
+        logger.info(f"MongoDB connected: {redact_credentials(uri)} / {database}.{collection_name}")
 
     async def close(self):
         if self._client is not None:

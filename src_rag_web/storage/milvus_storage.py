@@ -14,6 +14,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from .._redaction import redact_credentials
 from .base import BaseVectorStorage
 
 try:
@@ -71,11 +72,18 @@ class MilvusStorage(BaseVectorStorage):
                 f"{self._entity_collections}"
             )
 
-            logger.info(f"[{self.workspace}] Connected to Milvus: {uri}, collection: {self.full_collection_name}")
+            # pymilvus accepts credentials inside the URI (user:password@host),
+            # which is how a deployment with RBAC enabled is configured, so the
+            # URI must never be logged verbatim.
+            logger.info(
+                f"[{self.workspace}] Connected to Milvus: {redact_credentials(uri)}, "
+                f"collection: {self.full_collection_name}"
+            )
             self._initialized = True
 
         except Exception as e:
-            logger.error(f"[{self.workspace}] Failed to initialize Milvus: {e}")
+            # The exception text often echoes the URI back.
+            logger.error(f"[{self.workspace}] Failed to initialize Milvus: {redact_credentials(e)}")
             raise
 
     async def close(self) -> None:

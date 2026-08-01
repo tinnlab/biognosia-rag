@@ -7,6 +7,7 @@ This module initializes all components and exposes a single query() function.
 import logging
 from typing import Any
 
+from ._redaction import redact_credentials
 from .config import (
     check_endpoint_placeholders,
     load_config,
@@ -255,7 +256,10 @@ class RAGApp:
                 await self.es_client.info()
                 logger.info("Elasticsearch connection successful")
             except Exception as e:
-                logger.error(f"Elasticsearch connection failed: {e}")
+                # BIOGNOSIA_ELASTICSEARCH_HOSTS is a full URL and may embed
+                # basic-auth credentials; the client echoes the node URL back in
+                # its connection errors.
+                logger.error(f"Elasticsearch connection failed: {redact_credentials(e)}")
                 await self.es_client.close()
                 self.es_client = None
 

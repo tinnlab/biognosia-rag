@@ -15,6 +15,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from .._redaction import redact_credentials
 from .base import BaseKVStorage
 
 try:
@@ -73,11 +74,16 @@ class RedisStorage(BaseKVStorage):
             # Build full namespace
             self.full_namespace = f"{self.workspace}_{self.namespace}"
 
-            logger.info(f"[{self.workspace}] Connected to Redis: {host}:{port}/{db}, namespace: {self.full_namespace}")
+            # The password is passed separately and never logged, but `host`
+            # is free-form user input and can be given as a full URL.
+            logger.info(
+                f"[{self.workspace}] Connected to Redis: {redact_credentials(host)}:{port}/{db}, "
+                f"namespace: {self.full_namespace}"
+            )
             self._initialized = True
 
         except Exception as e:
-            logger.error(f"[{self.workspace}] Failed to initialize Redis: {e}")
+            logger.error(f"[{self.workspace}] Failed to initialize Redis: {redact_credentials(e)}")
             raise
 
     async def close(self) -> None:

@@ -13,6 +13,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from .._redaction import redact_credentials
 from .base import BaseGraphStorage
 
 try:
@@ -73,11 +74,17 @@ class Neo4jStorage(BaseGraphStorage):
                 result = await session.run("RETURN 1 as test")
                 await result.consume()
 
-            logger.info(f"[{self.workspace}] Connected to Neo4j: {uri}, database: {self._database or 'default'}")
+            # The URI comes straight from BIOGNOSIA_NEO4J_URI. Credentials
+            # normally travel in the auth tuple rather than the URI, but nothing
+            # stops a user putting them there, so redact regardless.
+            logger.info(
+                f"[{self.workspace}] Connected to Neo4j: {redact_credentials(uri)}, "
+                f"database: {self._database or 'default'}"
+            )
             self._initialized = True
 
         except Exception as e:
-            logger.error(f"[{self.workspace}] Failed to initialize Neo4j: {e}")
+            logger.error(f"[{self.workspace}] Failed to initialize Neo4j: {redact_credentials(e)}")
             raise
 
     async def close(self) -> None:
