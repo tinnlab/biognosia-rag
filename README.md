@@ -399,8 +399,10 @@ fails with *invalid device ordinal*.
 
 ## Tests
 
+Run from the repository root:
+
 ```bash
-pip install -r requirements-dev.txt
+pip install -r testing-env/requirements-dev.txt
 pytest
 ```
 

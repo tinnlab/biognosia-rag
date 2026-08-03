@@ -299,10 +299,11 @@ host = config["redis"]["host"]
 
 ## Testing
 
-The test suite lives in the top-level `tests/` directory and runs with pytest:
+The test suite lives in the top-level `tests/` directory and runs with pytest.
+From the repository root:
 
 ```bash
-pip install -r requirements-dev.txt
+pip install -r testing-env/requirements-dev.txt
 pytest
 ```
 

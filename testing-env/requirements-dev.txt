@@ -1,6 +1,7 @@
-# Test dependencies — this is the file to install to run the suite:
+# Test dependencies — this is the file to install to run the suite. From the
+# repository root:
 #
-#   pip install -r requirements-dev.txt
+#   pip install -r testing-env/requirements-dev.txt
 #   pytest
 #
 # The suite runs in MCP_TEST_MODE and needs neither torch, a GPU, a database nor
