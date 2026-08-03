@@ -6,7 +6,6 @@ import pytest
 
 from src_rag_web.config import (
     PLACEHOLDER_RE,
-    check_endpoint_placeholders,
     load_config,
     validate_llm_config,
 )
@@ -219,45 +218,6 @@ def test_validate_llm_config_rejects_unedited_api_key_placeholder():
         )
 
 
-# ── Endpoint placeholder guard ───────────────────────────────────────────────
-
-def test_placeholder_endpoint_is_rejected(monkeypatch):
-    """An unedited .env must fail immediately, naming the variable."""
-    monkeypatch.setenv("BIOGNOSIA_MILVUS_HOST", "<public-endpoint-tbd>")
-    cfg = load_config(str(CONF))
-    with pytest.raises(RuntimeError, match="BIOGNOSIA_MILVUS_HOST"):
-        check_endpoint_placeholders(cfg)
-
-
-def test_placeholder_in_numeric_var_is_rejected(monkeypatch):
-    """A placeholder port is dropped by the int coercion, so check the env too.
-
-    Without the environment check this silently leaves the config default in
-    place and the failure resurfaces much later as a connection error.
-    """
-    monkeypatch.setenv("BIOGNOSIA_MILVUS_PORT", "<public-port-tbd>")
-    cfg = load_config(str(CONF))
-    assert cfg["milvus"]["port"] == 19530  # coercion discarded the placeholder
-    with pytest.raises(RuntimeError, match="BIOGNOSIA_MILVUS_PORT"):
-        check_endpoint_placeholders(cfg)
-
-
-def test_filled_endpoints_pass_the_placeholder_check(monkeypatch):
-    for var, value in [
-        ("BIOGNOSIA_MILVUS_HOST", "milvus.example"),
-        ("BIOGNOSIA_MILVUS_PORT", "19530"),
-        ("BIOGNOSIA_NEO4J_URI", "bolt://neo.example:7687"),
-        ("BIOGNOSIA_NEO4J_USERNAME", "reader"),
-        ("BIOGNOSIA_NEO4J_PASSWORD", "a-password"),
-        ("BIOGNOSIA_REDIS_HOST", "redis.example"),
-        ("BIOGNOSIA_REDIS_PORT", "6379"),
-        ("BIOGNOSIA_MONGODB_URI", "mongodb://mongo.example:27017"),
-        ("BIOGNOSIA_ELASTICSEARCH_HOSTS", "http://es.example:9200"),
-    ]:
-        monkeypatch.setenv(var, value)
-    check_endpoint_placeholders(load_config(str(CONF)))  # must not raise
-
-
 def _env_example_values():
     env_example = CONF.resolve().parents[1] / ".env.example"
     values = {}
@@ -270,14 +230,16 @@ def _env_example_values():
     return values
 
 
-# Endpoints are shipped filled in: they address the local ports opened by the
-# tunnel client, which are the same on every machine. Credentials are not
-# shipped — they are distributed alongside the paper.
+# The knowledge base ships fully configured. Its accounts are read-only and
+# published with the paper, so these are working values rather than placeholders,
+# and they address the local ports the tunnel client opens — identical on every
+# machine. A user edits nothing here.
 @pytest.mark.parametrize(
     "key,expected",
     [
         ("BIOGNOSIA_MILVUS_PORT", "18110"),
         ("BIOGNOSIA_NEO4J_URI", "bolt://127.0.0.1:18111"),
+        ("BIOGNOSIA_NEO4J_USERNAME", "neo4j"),
         ("BIOGNOSIA_REDIS_HOST", "127.0.0.1"),
         ("BIOGNOSIA_REDIS_PORT", "18112"),
         ("BIOGNOSIA_ELASTICSEARCH_HOSTS", "http://127.0.0.1:18114"),
@@ -290,23 +252,39 @@ def test_shipped_env_example_points_at_the_tunnel_ports(key, expected):
 
 
 @pytest.mark.parametrize(
-    "key",
+    "key,host",
     [
-        "BIOGNOSIA_MILVUS_HOST",       # user:password@127.0.0.1
-        "BIOGNOSIA_NEO4J_USERNAME",
-        "BIOGNOSIA_NEO4J_PASSWORD",
-        "BIOGNOSIA_REDIS_PASSWORD",
-        "BIOGNOSIA_MONGODB_URI",       # user:password@127.0.0.1:18113
-        "BIOGNOSIA_LLM_API_KEY",
+        # Milvus credentials ride inside the host value: the adapter builds
+        # http://{host}:{port} and pymilvus parses user:password@ back out.
+        ("BIOGNOSIA_MILVUS_HOST", "@127.0.0.1"),
+        ("BIOGNOSIA_MONGODB_URI", "@127.0.0.1:18113"),
     ],
 )
-def test_shipped_env_example_never_carries_a_real_credential(key):
-    """Guard against a credential leaking into the committed .env.example."""
+def test_credential_bearing_values_are_filled_in_and_point_at_the_tunnel(key, host):
     values = _env_example_values()
     assert key in values, f"{key} missing from .env.example"
-    assert PLACEHOLDER_RE.search(values[key]), (
-        f".env.example {key} is not a placeholder: {values[key]!r}"
+    assert not PLACEHOLDER_RE.search(values[key]), (
+        f".env.example {key} still has an unfilled placeholder: {values[key]!r}"
     )
+    assert host in values[key]
+
+
+def test_mongodb_uri_keeps_authsource_admin():
+    """bio_public lives in the admin database, not paper_db."""
+    assert "?authSource=admin" in _env_example_values()["BIOGNOSIA_MONGODB_URI"]
+
+
+@pytest.mark.parametrize("key", ["BIOGNOSIA_REDIS_PASSWORD", "BIOGNOSIA_ELASTICSEARCH_PASSWORD"])
+def test_stores_without_auth_ship_no_password(key):
+    """Redis and Elasticsearch take no auth; their password vars stay commented."""
+    assert key not in _env_example_values()
+
+
+def test_the_only_value_a_user_supplies_is_their_llm_key():
+    """Everything else is filled in, so the API key must remain a placeholder —
+    validate_llm_config rejects it if left unedited."""
+    values = _env_example_values()
+    assert PLACEHOLDER_RE.search(values["BIOGNOSIA_LLM_API_KEY"])
 
 
 def test_shipped_env_example_is_configured_for_a_reasoning_model():

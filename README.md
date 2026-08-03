@@ -7,9 +7,10 @@ vector index, a knowledge graph and a keyword index, reranks them, and asks a
 language model to answer using only those passages — returning the answer with a
 citation for every claim, each resolving to the paper and passage it came from.
 
-You do not need to build or host the knowledge base. It runs on our
-infrastructure, and this repository ships a tunnel client that reaches it from
-your machine. What you provide is a GPU and your own OpenAI API key.
+You do not need to build or host the knowledge base, nor to ask us for access to
+it. It runs on our infrastructure; this repository ships a tunnel client that
+reaches it from your machine, and the read-only credentials are published in
+`.env.example`. What you provide is a GPU and your own OpenAI API key.
 
 ---
 
@@ -59,6 +60,12 @@ This opens five local listeners that reach our databases over
 Leave it running while you query. Stop it with
 `docker compose -f docker-compose.tunnel.yml down`.
 
+We host these databases so that reproducing the paper does not require you to
+rebuild a very large corpus first, and we intend to keep them available to
+readers. Should an endpoint ever move, this repository and its README are
+updated with the current details — so if a connection stops working, pull the
+latest version and restart the tunnel.
+
 > The tunnels are published on **`127.0.0.1` only**, deliberately — they are not
 > exposed to your network. One consequence: if you run *your* application inside
 > a container, it cannot reach them at `localhost`, because inside a container
@@ -87,24 +94,7 @@ python -m nltk.downloader punkt punkt_tab stopwords \
 cp .env.example .env
 ```
 
-Everything you must edit is in the `FILL THESE IN` block at the top, and it is
-just two things:
-
-**(a) The knowledge-base credentials.** These are distributed alongside the
-paper — they are not in this repository. Fill in the `<...>` placeholders:
-
-```dotenv
-BIOGNOSIA_MILVUS_HOST=<milvus-user>:<milvus-password>@127.0.0.1
-BIOGNOSIA_NEO4J_USERNAME=<neo4j-user>
-BIOGNOSIA_NEO4J_PASSWORD=<neo4j-password>
-BIOGNOSIA_REDIS_PASSWORD=<redis-password>
-BIOGNOSIA_MONGODB_URI=mongodb://<mongodb-user>:<mongodb-password>@127.0.0.1:18113
-```
-
-The host and port parts are already correct — they match the tunnel above.
-Nothing else in the file needs changing.
-
-**(b) Your OpenAI API key**, right below:
+**You need to change exactly one line** — your OpenAI API key:
 
 ```dotenv
 BIOGNOSIA_LLM_PROVIDER=openai
@@ -112,8 +102,13 @@ BIOGNOSIA_LLM_MODEL=gpt-5
 BIOGNOSIA_LLM_API_KEY=<your-openai-api-key>
 ```
 
-If any placeholder is left unfilled, the run stops immediately and names it,
-rather than failing ten minutes later.
+Leave it unedited and the run stops immediately saying so, rather than failing
+part-way through.
+
+The knowledge-base section above it is **already complete** — endpoints and
+credentials both. Those accounts are **read-only and deliberately public**: they
+are published with the paper so anyone can reproduce our results. There is
+nothing to request from us and no access to apply for.
 
 ### 5. Ask a question
 
@@ -231,8 +226,8 @@ given are read-only.
 
 **Credentials**
 
-- The knowledge-base credentials, distributed alongside the paper.
-- An OpenAI API key.
+- An OpenAI API key. This is the only credential you supply — the knowledge-base
+  accounts are read-only, public, and already in `.env.example`.
 - A HuggingFace token — strongly recommended, not strictly required. None of the
   models below is gated, so anonymous download works, but the reranker starts
   many worker processes that each contact the Hub, and anonymous requests are
@@ -259,16 +254,16 @@ Defaults live in `config/rag-web.conf`, which documents every retrieval and
 reranking tunable inline. Environment variables override them, and only
 variables that are set and non-empty take effect.
 
-**Knowledge base** — endpoints are pre-filled to match the tunnel; credentials
-are yours to supply.
+**Knowledge base** — all pre-filled to match the tunnel, with read-only public
+credentials. You should not need to touch any of these.
 
 | Variable | Notes |
 |---|---|
-| `BIOGNOSIA_MILVUS_HOST` / `_PORT` / `_WORKSPACE` | credentials go **inside** the host value: `user:password@127.0.0.1` |
-| `BIOGNOSIA_NEO4J_URI` / `_USERNAME` / `_PASSWORD` / `_DATABASE` | credentials separate from the URI |
-| `BIOGNOSIA_REDIS_HOST` / `_PORT` / `_DB` / `_PASSWORD` | no username; the password alone authenticates |
-| `BIOGNOSIA_MONGODB_URI` / `_DATABASE` / `_COLLECTION` | authenticates against `admin`; do not add `?authSource=` |
-| `BIOGNOSIA_ELASTICSEARCH_HOSTS` / `_USERNAME` / `_PASSWORD` / `_ENABLED` | no auth |
+| `BIOGNOSIA_MILVUS_HOST` / `_PORT` / `_WORKSPACE` | credentials ride **inside** the host value (`user:password@127.0.0.1`): the adapter builds `http://{host}:{port}` and pymilvus parses them back out. There is deliberately no separate username/password variable. |
+| `BIOGNOSIA_NEO4J_URI` / `_USERNAME` / `_PASSWORD` / `_DATABASE` | credentials separate from the URI. Neo4j Community has no role-based access control, so there is no separate public account — the server is read-only by configuration. |
+| `BIOGNOSIA_REDIS_HOST` / `_PORT` / `_DB` | no authentication |
+| `BIOGNOSIA_MONGODB_URI` / `_DATABASE` / `_COLLECTION` | keep `?authSource=admin` — the user lives in the `admin` database, not in `paper_db` |
+| `BIOGNOSIA_ELASTICSEARCH_HOSTS` / `_ENABLED` | no authentication |
 
 **LLM**
 
@@ -361,8 +356,8 @@ most detail — citation resolution.
 **This repository contains the retrieval and serving code only.**
 
 - The biomedical **knowledge base** is not distributed here. It is hosted by us
-  and reached through the tunnel client; access credentials are supplied
-  alongside the paper.
+  and reached through the tunnel client, using the read-only credentials
+  published in `.env.example` — open to anyone, no request needed.
 - The repository contains **no corpus-construction or ingestion code**. Nothing
   here builds, populates or updates a knowledge base; it only queries one.
 - No language model weights are included. Generation runs against the API with

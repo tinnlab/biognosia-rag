@@ -9,7 +9,6 @@ from typing import Any
 
 from ._redaction import redact_credentials
 from .config import (
-    check_endpoint_placeholders,
     load_config,
     require_llm_sdk,
     validate_llm_config,
@@ -80,9 +79,8 @@ class RAGApp:
         logger.info(f"Loading configuration from {self.config_path}")
         self.config = load_config(self.config_path)
 
-        # Cheap checks before anything expensive: an unedited .env should fail
+        # Cheap checks before anything expensive: a misconfiguration should fail
         # here, not after several minutes of loading models onto the GPU.
-        check_endpoint_placeholders(self.config)
         warn_if_hf_token_missing()
         if not self.skip_llm:
             llm_config = self.config.get("llm", {})
