@@ -44,77 +44,97 @@ async def get_node_data(
         nodes_from_milvus = {}
 
         if entities_vdb:
-            from pymilvus import Collection, connections
+            # Everything Milvus contributes here is best-effort: Neo4j below
+            # carries the same metadata. Keeping this in its own try is what
+            # makes that fallback reachable — a failure in the connection
+            # escaped to the outer handler instead, so get_node_data() returned
+            # [] without ever consulting Neo4j.
+            try:
+                from pymilvus import Collection, connections
 
-            # Ensure Milvus connection exists — use host/port from the storage config
-            if not connections.has_connection("default"):
-                milvus_host = entities_vdb.config.get("host", "localhost")
-                milvus_port = entities_vdb.config.get("port", 19530)
-                connections.connect("default", host=milvus_host, port=milvus_port)
+                # Ensure Milvus connection exists — use host/port from the
+                # storage config, but hand them over as a URI rather than as
+                # host=/port=. The configured host carries its credentials
+                # inline (user:password@host), which connect()'s host=
+                # parameter rejects outright: is_legal_host() forbids ":", and
+                # reports it, misleadingly, as "Type of 'host' must be str."
+                # Given a URI, pymilvus parses the credentials back out itself
+                # — the same thing MilvusStorage does with the same value.
+                if not connections.has_connection("default"):
+                    milvus_host = entities_vdb.config.get("host", "localhost")
+                    milvus_port = entities_vdb.config.get("port", 19530)
+                    connections.connect("default", uri=f"http://{milvus_host}:{milvus_port}")
 
-            # Group node_ids by collection
-            nodes_by_collection = {}
-            for node_id in node_ids:
-                # Map entity ID prefix to collection name
-                if node_id.startswith("GENE:"):
-                    coll_name = "entities_Genes"
-                elif node_id.startswith("GO:"):
-                    coll_name = "entities_Gene_Ontology"
-                elif node_id.startswith("KEGG:"):
-                    coll_name = "entities_KEGG_Pathway"
-                elif node_id.startswith("DISEASE:") or node_id.startswith("MESH:"):
-                    coll_name = "entities_Disease"
-                elif node_id.startswith("CHEM:"):
-                    coll_name = "entities_Chemical"
-                elif node_id.startswith("CELL:"):
-                    coll_name = "entities_Cell_Ontology"
-                else:
-                    continue
+                # Group node_ids by collection
+                nodes_by_collection = {}
+                for node_id in node_ids:
+                    # Map entity ID prefix to collection name
+                    if node_id.startswith("GENE:"):
+                        coll_name = "entities_Genes"
+                    elif node_id.startswith("GO:"):
+                        coll_name = "entities_Gene_Ontology"
+                    elif node_id.startswith("KEGG:"):
+                        coll_name = "entities_KEGG_Pathway"
+                    elif node_id.startswith("DISEASE:") or node_id.startswith("MESH:"):
+                        coll_name = "entities_Disease"
+                    elif node_id.startswith("CHEM:"):
+                        coll_name = "entities_Chemical"
+                    elif node_id.startswith("CELL:"):
+                        coll_name = "entities_Cell_Ontology"
+                    else:
+                        continue
 
-                if coll_name not in nodes_by_collection:
-                    nodes_by_collection[coll_name] = []
-                nodes_by_collection[coll_name].append(node_id)
+                    if coll_name not in nodes_by_collection:
+                        nodes_by_collection[coll_name] = []
+                    nodes_by_collection[coll_name].append(node_id)
 
-            # Batch query each collection
-            for coll_name, ids_for_collection in nodes_by_collection.items():
-                try:
-                    collection = Collection(coll_name)
+                # Batch query each collection
+                for coll_name, ids_for_collection in nodes_by_collection.items():
+                    try:
+                        collection = Collection(coll_name)
 
-                    # Build IN expression for batch query (use entity_name which has prefix)
-                    ids_str = ", ".join([f'"{eid}"' for eid in ids_for_collection])
-                    expr = f"entity_name in [{ids_str}]"
+                        # Build IN expression for batch query (use entity_name which has prefix)
+                        ids_str = ", ".join([f'"{eid}"' for eid in ids_for_collection])
+                        expr = f"entity_name in [{ids_str}]"
 
-                    logger.info(f"Milvus entity lookup: collection={coll_name}, entities={len(ids_for_collection)}")
-                    logger.info(f"  Query: {expr[:200]}...")
-                    logger.info(f"  IDs: {ids_for_collection[:5]}...")
+                        logger.info(
+                            f"Milvus entity lookup: collection={coll_name}, entities={len(ids_for_collection)}"
+                        )
+                        logger.info(f"  Query: {expr[:200]}...")
+                        logger.info(f"  IDs: {ids_for_collection[:5]}...")
 
-                    results = collection.query(
-                        expr=expr,
-                        output_fields=["*"],  # Get all including dynamic fields
-                        limit=len(ids_for_collection),
-                    )
+                        results = collection.query(
+                            expr=expr,
+                            output_fields=["*"],  # Get all including dynamic fields
+                            limit=len(ids_for_collection),
+                        )
 
-                    logger.info(f"  Results: {len(results)} entities found")
+                        logger.info(f"  Results: {len(results)} entities found")
 
-                    for entity in results:
-                        entity_name = entity.get("entity_name")  # Use entity_name (has prefix)
-                        description = entity.get("description", entity.get("label", ""))
+                        for entity in results:
+                            entity_name = entity.get("entity_name")  # Use entity_name (has prefix)
+                            description = entity.get("description", entity.get("label", ""))
 
-                        logger.info(f"    {entity_name}: desc='{description[:50]}...'")
+                            logger.info(f"    {entity_name}: desc='{description[:50]}...'")
 
-                        # Use description field (clean) not content (gene list)
-                        nodes_from_milvus[entity_name] = {
-                            "entity_type": entity.get(
-                                "entity_type", entity_name.split(":")[0] if ":" in entity_name else "Unknown"
-                            ),
-                            "description": description,
-                        }
+                            # Use description field (clean) not content (gene list)
+                            nodes_from_milvus[entity_name] = {
+                                "entity_type": entity.get(
+                                    "entity_type", entity_name.split(":")[0] if ":" in entity_name else "Unknown"
+                                ),
+                                "description": description,
+                            }
 
-                    logger.info(f"  Milvus batch: {len(results)} entities from {coll_name}")
+                        logger.info(f"  Milvus batch: {len(results)} entities from {coll_name}")
 
-                except Exception as e:
-                    logger.error(f"Milvus batch query failed for {coll_name}: {e}", exc_info=True)
-                    continue
+                    except Exception as e:
+                        logger.error(f"Milvus batch query failed for {coll_name}: {e}", exc_info=True)
+                        continue
+
+            except Exception as e:
+                # Deliberately not re-raised: nodes_from_milvus stays empty and
+                # the Neo4j branch below picks the entities up instead.
+                logger.error(f"Milvus entity lookup unavailable, falling back to Neo4j: {e}")
 
         # Fallback to Neo4j if needed
         if nodes_from_milvus:
