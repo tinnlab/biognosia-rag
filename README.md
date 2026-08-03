@@ -22,6 +22,7 @@ reaches it from your machine, and the read-only credentials are published in
 - [How a query is answered](#how-a-query-is-answered)
 - [Requirements](#requirements)
 - [Configuration reference](#configuration-reference)
+- [Running on macOS](#running-on-macos)
 - [Choosing a GPU and sizing the rerank pools](#choosing-a-gpu-and-sizing-the-rerank-pools)
 - [Tests](#tests)
 - [Data availability](#data-availability)
@@ -260,7 +261,8 @@ given are read-only.
 
 **Software**
 
-- Python 3.11 and CUDA 12.4 drivers.
+- Python 3.11 and CUDA 12.4 drivers. Linux is the supported platform; see
+  [macOS](#running-on-macos) if you are on a Mac.
 - Docker, to run the tunnel client.
 
 **Credentials**
@@ -344,6 +346,59 @@ already have one of those exported, as it will be used silently.
 | `BIOGNOSIA_RERANK_NUM_WORKERS` / `_STAGE1_NUM_WORKERS` | reranker pool sizes — see below |
 | `BIOGNOSIA_QUERY_LOG_DIR` | per-query debug logs (empty = off) |
 | `BIOGNOSIA_NGRAM_STATISTICS_FILE` | n-gram entity statistics TSV |
+
+## Running on macOS
+
+If you want to run Biognosia on your macOS machine, you can — but expect it to
+be slow, and treat it as a way to explore the code rather than to do real work.
+macOS has no CUDA, so the two cross-encoder rerankers, which are the expensive
+half of the pipeline, fall back to the CPU. The quickstart above assumes Linux
+and needs three changes.
+
+**1. Install torch from PyPI, not the CUDA index.** The `cu124` wheel index in
+step 3 has no macOS builds, so that command fails with "no matching
+distribution". Replace it with:
+
+```bash
+pip install torch==2.5.1
+```
+
+The rest of step 3 — `requirements.txt` and the NLTK corpora — is unchanged.
+
+**2. Put the embedding models on Apple Silicon, the rerankers on the CPU.** The
+three embedding models support Metal via `mps`. The rerankers do not: they fall
+back to the CPU whenever CUDA is absent, whatever you set. Say so explicitly, so
+the configuration reflects what actually happens:
+
+```dotenv
+BIOGNOSIA_EMBEDDING_DEVICE=mps
+BIOGNOSIA_RERANK_DEVICE=cpu
+BIOGNOSIA_RERANK_STAGE1_DEVICE=cpu
+```
+
+**3. Shrink the rerank workload.** The defaults are sized for a data-centre GPU
+and will exhaust a laptop. Each worker is a separate process holding its own
+model copy, and on macOS that is *system RAM* rather than VRAM — the ~10 GB
+resident and ~84 GB peak quoted in [sizing](#choosing-a-gpu-and-sizing-the-rerank-pools)
+both come out of the same memory your machine runs on. Start small:
+
+```dotenv
+BIOGNOSIA_RERANK_NUM_WORKERS=1
+BIOGNOSIA_RERANK_STAGE1_NUM_WORKERS=1
+```
+
+and in `config/rag-web.conf` cut the batch settings, which dominate the peak —
+`stage1_batch_size` and `batch_size` from 512 down to 16-32 first, then
+`candidate_top_k` from 2000 and `stage1_top_k` from 1024 to a few hundred.
+
+Everything else works unchanged: the tunnel client runs under Docker Desktop,
+and the language model is an API call rather than a local model, so generation
+is unaffected.
+
+> **Not verified.** The Linux/CUDA path is what we test and measure; the macOS
+> path above follows from how the code selects devices, not from a run we have
+> done. Expect reranking to take minutes rather than seconds, and please tell us
+> what you hit.
 
 ## Choosing a GPU and sizing the rerank pools
 
