@@ -301,16 +301,20 @@ def test_no_live_api_key_is_committed():
 
 
 def test_llm_base_url_is_set_because_the_provider_does_not_route():
-    """provider=groq selects the OpenAI-compatible client but sets no endpoint,
-    so without BASE_URL the key would be sent to api.openai.com."""
+    """The provider setting selects the OpenAI-compatible client but sets no
+    endpoint of its own, so BASE_URL is what actually routes the request and has
+    to ship filled in — including for the openai provider, whose client would
+    otherwise depend on the SDK's own default rather than on this file."""
     values = _env_example_values()
-    assert values["BIOGNOSIA_LLM_PROVIDER"] == "groq"
-    assert values["BIOGNOSIA_LLM_BASE_URL"] == "https://api.groq.com/openai/v1"
+    assert values["BIOGNOSIA_LLM_PROVIDER"] == "openai"
+    assert values["BIOGNOSIA_LLM_BASE_URL"] == "https://api.openai.com/v1"
 
 
-def test_llm_model_id_carries_the_provider_prefix():
-    """Groq spells it openai/gpt-oss-120b; the bare name is not a valid id."""
-    assert _env_example_values()["BIOGNOSIA_LLM_MODEL"] == "openai/gpt-oss-120b"
+def test_shipped_llm_model_is_the_verified_one():
+    """gpt-5 is the model the pipeline is verified end-to-end against. Swapping
+    provider means swapping the model id too: Groq, for instance, spells its
+    open-weight model openai/gpt-oss-120b and the bare name is not a valid id."""
+    assert _env_example_values()["BIOGNOSIA_LLM_MODEL"] == "gpt-5"
 
 
 def test_shipped_env_example_sends_no_rejected_sampling_parameters():

@@ -261,7 +261,33 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             logger.info(f"LLM API request: model={self.model}")
 
             # Call API
-            response = await client.chat.completions.create(**api_params)
+            try:
+                response = await client.chat.completions.create(**api_params)
+            except Exception as json_mode_error:
+                # Groq enforces response_format={"type": "json_object"} server
+                # side and rejects anything whose top level is not an object.
+                # Parts of the pipeline legitimately ask for a JSON *array*
+                # (query expansion says so in as many words) and the model obeys
+                # them, so the request fails even though the generated text was
+                # exactly what the caller wanted — it comes back as
+                # json_validate_failed, carrying the good output in
+                # `failed_generation`.
+                #
+                # Retry once without the parameter. The callers have a fallback
+                # of their own, but it only fires on errors that mention
+                # "response_format", which this one never does; without this the
+                # call fails every time for as long as JSON mode is on.
+                if "response_format" not in api_params:
+                    raise
+                error_text = str(json_mode_error).lower()
+                if "json_validate_failed" not in error_text and "response_format" not in error_text:
+                    raise
+                logger.warning(
+                    f"Endpoint rejected JSON mode ({type(json_mode_error).__name__}); "
+                    f"retrying the request without response_format."
+                )
+                api_params.pop("response_format")
+                response = await client.chat.completions.create(**api_params)
 
             # Debug: Log response details for troubleshooting GPT-5
             logger.info(f"API response finish_reason: {response.choices[0].finish_reason}")

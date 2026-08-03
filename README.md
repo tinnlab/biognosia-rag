@@ -10,7 +10,8 @@ citation for every claim, each resolving to the paper and passage it came from.
 You do not need to build or host the knowledge base, nor to ask us for access to
 it. It runs on our infrastructure; this repository ships a tunnel client that
 reaches it from your machine, and the read-only credentials are published in
-`.env.example`. What you provide is a GPU and a free Groq API key.
+`.env.example`. What you provide is a GPU and an API key for the language model
+— see [Configure](#4-configure) for the providers this is verified against.
 
 ---
 
@@ -100,8 +101,33 @@ The knowledge-base settings are already done — **read-only and deliberately
 public**, published with the paper so anyone can reproduce our results, so there
 is no access to request and nothing there to edit.
 
-Generation is pre-configured against Groq, which serves OpenAI's open-weight
-`gpt-oss-120b` on a free tier:
+Keep the key out of anything you commit — `.env` is gitignored for that reason.
+
+#### 4a. OpenAI `gpt-5` (recommended)
+
+This is the configuration the pipeline is verified end-to-end against, and it is
+what `.env.example` already ships — paste your key into the last line and you
+are done:
+
+```dotenv
+BIOGNOSIA_LLM_PROVIDER=openai
+BIOGNOSIA_LLM_MODEL=gpt-5
+BIOGNOSIA_LLM_BASE_URL=https://api.openai.com/v1
+BIOGNOSIA_LLM_API_KEY=<your-openai-api-key>      # <- this one
+```
+
+Get the key from [platform.openai.com](https://platform.openai.com) under
+**API keys**. It is shown once, so copy it there and then; OpenAI keys begin
+with `sk-`.
+
+#### 4b. Another provider — e.g. Groq
+
+Any OpenAI-compatible endpoint works. Change all four `BIOGNOSIA_LLM_*` lines
+**together** — `BASE_URL` is required rather than optional, because the provider
+setting chooses the client, not the endpoint, so on its own it would send your
+key to OpenAI.
+
+Groq serves OpenAI's open-weight `gpt-oss-120b`:
 
 ```dotenv
 BIOGNOSIA_LLM_PROVIDER=groq
@@ -110,20 +136,18 @@ BIOGNOSIA_LLM_BASE_URL=https://api.groq.com/openai/v1
 BIOGNOSIA_LLM_API_KEY=<your-groq-api-key>      # <- this one
 ```
 
-#### Getting a free Groq API key
+Get the key from [console.groq.com](https://console.groq.com) under **API
+Keys**. Groq keys begin with `gsk_`. The model id must carry the `openai/`
+prefix — that is Groq's identifier for it, and the bare name is not valid.
 
-1. Sign up at [console.groq.com](https://console.groq.com) — the free tier is
-   enough to run the examples here.
-2. In the console, open **API Keys** and create one. It is shown once, so copy
-   it there and then.
-3. Paste it into `BIOGNOSIA_LLM_API_KEY` in your `.env`. Groq keys begin with
-   `gsk_`.
-
-Keep the key out of anything you commit — `.env` is gitignored for that reason.
-
-Prefer a different provider? Change all four `BIOGNOSIA_LLM_*` lines together.
-`BASE_URL` is required rather than optional: the provider setting chooses the
-client, not the endpoint, so on its own it would send your key to OpenAI.
+> ⚠️ **Groq's free tier is not enough to run this.** It caps
+> `openai/gpt-oss-120b` at **8,000 tokens per minute**, and a single query needs
+> far more than that in one request: measured against the live knowledge base,
+> the routing call alone asked for 8,615 tokens and the final generation call
+> for 26,541. Both come back as `HTTP 413 … rate_limit_exceeded`, which is a
+> per-request size rejection rather than a throttle — waiting does not help, and
+> the query fails outright. Use a paid tier, or any provider whose per-request
+> budget comfortably exceeds ~30k tokens.
 
 ### 5. Ask a question
 
@@ -241,9 +265,11 @@ given are read-only.
 
 **Credentials**
 
-- A free [Groq](https://console.groq.com) API key for generation — the only one
-  you supply, and the quickstart walks you through it. The knowledge-base
-  accounts are read-only, public, and already in `.env.example`.
+- An API key for generation — the only one you supply, and the quickstart walks
+  you through it. Any OpenAI-compatible provider works, but it needs a
+  per-request budget of roughly 30k tokens, which rules out some free tiers.
+  The knowledge-base accounts are read-only, public, and already in
+  `.env.example`.
 - A HuggingFace token — strongly recommended, not strictly required. None of the
   models below is gated, so anonymous download works, but the reranker starts
   many worker processes that each contact the Hub, and anonymous requests are
@@ -270,25 +296,19 @@ Defaults live in `config/rag-web.conf`, which documents every retrieval and
 reranking tunable inline. Environment variables override them, and only
 variables that are set and non-empty take effect.
 
-**Knowledge base** — all pre-filled to match the tunnel, with read-only public
-credentials. You should not need to touch any of these.
-
-| Variable | Notes |
-|---|---|
-| `BIOGNOSIA_MILVUS_HOST` / `_PORT` / `_WORKSPACE` | credentials ride **inside** the host value (`user:password@127.0.0.1`): the adapter builds `http://{host}:{port}` and pymilvus parses them back out. There is deliberately no separate username/password variable. |
-| `BIOGNOSIA_NEO4J_URI` / `_USERNAME` / `_PASSWORD` / `_DATABASE` | credentials separate from the URI. Neo4j Community has no role-based access control, so there is no separate public account — the server is read-only by configuration. |
-| `BIOGNOSIA_REDIS_HOST` / `_PORT` / `_DB` | no authentication |
-| `BIOGNOSIA_MONGODB_URI` / `_DATABASE` / `_COLLECTION` | keep `?authSource=admin` — the user lives in the `admin` database, not in `paper_db` |
-| `BIOGNOSIA_ELASTICSEARCH_HOSTS` / `_ENABLED` | no authentication |
+The knowledge-base variables are not listed here: they ship pre-filled in
+`.env.example` to match the tunnel, with read-only public credentials, and there
+is nothing to change. `.env.example` documents each one inline if you need the
+detail.
 
 **LLM**
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `BIOGNOSIA_LLM_PROVIDER` | `openai` \| `groq` \| `anthropic` \| `ollama`. `openai` and `groq` share the same OpenAI-compatible client. | `groq` |
-| `BIOGNOSIA_LLM_MODEL` | model id, exactly as the provider spells it | `openai/gpt-oss-120b` |
+| `BIOGNOSIA_LLM_PROVIDER` | `openai` \| `groq` \| `anthropic` \| `ollama`. `openai` and `groq` share the same OpenAI-compatible client. | `openai` |
+| `BIOGNOSIA_LLM_MODEL` | model id, exactly as the provider spells it | `gpt-5` |
 | `BIOGNOSIA_LLM_API_KEY` | API key | — (yours; see the quickstart) |
-| `BIOGNOSIA_LLM_BASE_URL` | where requests go; **must include `/v1`** | `https://api.groq.com/openai/v1` |
+| `BIOGNOSIA_LLM_BASE_URL` | where requests go; **must include `/v1`** | `https://api.openai.com/v1` |
 | `BIOGNOSIA_LLM_TIMEOUT` | seconds per API call | `300` |
 | `BIOGNOSIA_LLM_ENABLE_COT` | `false` strips `<think>` blocks from answers | `true` |
 | `BIOGNOSIA_LLM_MAX_COMPLETION_TOKENS` | output cap | `8192` |
@@ -364,8 +384,13 @@ Run from the repository root:
 
 ```bash
 pip install -r testing-env/requirements-dev.txt
-pytest
+python -m pytest
 ```
+
+`python -m pytest` rather than `pytest`: the package is imported from the
+repository root rather than installed, and only the `-m` form puts the current
+directory on `sys.path`. Plain `pytest` fails collection with
+`ModuleNotFoundError: No module named 'src_rag_web'`.
 
 The suite is hermetic: no GPU, no databases, no LLM, not even torch. It covers
 the configuration and environment-override logic, credential redaction, and — in
