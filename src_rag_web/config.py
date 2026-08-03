@@ -92,28 +92,39 @@ def _env_bool(config: dict, section: str, key: str, env: str) -> None:
 # Nothing legitimate in a hostname, URI or credential looks like that.
 PLACEHOLDER_RE = re.compile(r"<[^<>\s]{3,}>")
 
-# (section, key, "the environment variable that sets it") for every endpoint or
-# credential that has no usable default and must be filled in.
-_REQUIRED_ENDPOINTS = [
-    ("milvus", "host", "BIOGNOSIA_MILVUS_HOST"),
+# (section, key, "the environment variable that sets it") for every setting the
+# user must supply.
+#
+# The endpoints themselves now ship with real values in `.env.example` — they
+# point at the local ports the tunnel client opens — so in practice only the
+# credentials are still unfilled. The endpoints stay in this list anyway: it
+# costs nothing, and it keeps the check honest for anyone who edits them.
+_REQUIRED_SETTINGS = [
+    ("milvus", "host", "BIOGNOSIA_MILVUS_HOST"),  # carries user:password@
     ("milvus", "port", "BIOGNOSIA_MILVUS_PORT"),
     ("neo4j", "uri", "BIOGNOSIA_NEO4J_URI"),
     ("neo4j", "username", "BIOGNOSIA_NEO4J_USERNAME"),
     ("neo4j", "password", "BIOGNOSIA_NEO4J_PASSWORD"),
     ("redis", "host", "BIOGNOSIA_REDIS_HOST"),
     ("redis", "port", "BIOGNOSIA_REDIS_PORT"),
-    ("mongodb", "uri", "BIOGNOSIA_MONGODB_URI"),
+    ("redis", "password", "BIOGNOSIA_REDIS_PASSWORD"),
+    ("mongodb", "uri", "BIOGNOSIA_MONGODB_URI"),  # carries user:password@
     ("elasticsearch", "hosts", "BIOGNOSIA_ELASTICSEARCH_HOSTS"),
 ]
 
+# Kept under the old name so nothing importing it breaks.
+_REQUIRED_ENDPOINTS = _REQUIRED_SETTINGS
+
 
 def check_endpoint_placeholders(config: dict) -> None:
-    """Fail fast if any endpoint still holds an `.env.example` placeholder.
+    """Fail fast if any required setting still holds an `.env.example` placeholder.
 
-    Without this the first symptom of an unedited `.env` is a connection error
-    ten minutes into loading models onto the GPU, or — worse — a silent fallback
-    to the localhost defaults in the config file. Raising here turns it into one
-    actionable line before any expensive work starts.
+    In practice this now catches the knowledge-base credentials, which are
+    distributed alongside the paper rather than committed. Without it the first
+    symptom of an unedited `.env` is an authentication error ten minutes into
+    loading models onto the GPU, or — worse — a silent fallback to the localhost
+    defaults in the config file. Raising here turns it into one actionable line
+    before any expensive work starts.
 
     Both the environment and the resolved config are checked. The environment
     has to be checked directly because a placeholder in a numeric variable (e.g.
@@ -121,7 +132,7 @@ def check_endpoint_placeholders(config: dict) -> None:
     would otherwise leave the config holding a plausible-looking default.
     """
     unfilled = []
-    for section, key, env_var in _REQUIRED_ENDPOINTS:
+    for section, key, env_var in _REQUIRED_SETTINGS:
         raw = os.environ.get(env_var)
         resolved = config.get(section, {}).get(key)
         for value in (raw, resolved):
@@ -134,8 +145,10 @@ def check_endpoint_placeholders(config: dict) -> None:
             "These settings are still placeholders and must be filled in before "
             "the system can connect to the knowledge base:\n"
             + "\n".join(unfilled)
-            + "\n\nEdit the 'FILL THESE IN' block at the top of your .env "
-            "(copy it from .env.example if you have not already)."
+            + "\n\nEdit the 'FILL THESE IN' block at the top of your .env (copy "
+            "it from .env.example if you have not already). The knowledge-base "
+            "credentials are distributed alongside the paper; the endpoints are "
+            "already filled in and point at the tunnel client's local ports."
         )
 
 

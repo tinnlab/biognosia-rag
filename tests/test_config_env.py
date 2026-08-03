@@ -258,16 +258,8 @@ def test_filled_endpoints_pass_the_placeholder_check(monkeypatch):
     check_endpoint_placeholders(load_config(str(CONF)))  # must not raise
 
 
-def test_shipped_env_example_is_all_placeholders():
-    """Guard against a real endpoint or credential leaking into .env.example."""
+def _env_example_values():
     env_example = CONF.resolve().parents[1] / ".env.example"
-    required = [
-        "BIOGNOSIA_MILVUS_HOST",
-        "BIOGNOSIA_NEO4J_URI",
-        "BIOGNOSIA_REDIS_HOST",
-        "BIOGNOSIA_MONGODB_URI",
-        "BIOGNOSIA_ELASTICSEARCH_HOSTS",
-    ]
     values = {}
     for line in env_example.read_text().splitlines():
         stripped = line.strip()
@@ -275,9 +267,55 @@ def test_shipped_env_example_is_all_placeholders():
             continue
         key, _, value = stripped.partition("=")
         values.setdefault(key.strip(), value.strip())
+    return values
 
-    for key in required:
-        assert key in values, f"{key} missing from .env.example"
-        assert PLACEHOLDER_RE.search(values[key]), (
-            f".env.example {key} is not a placeholder: {values[key]!r}"
-        )
+
+# Endpoints are shipped filled in: they address the local ports opened by the
+# tunnel client, which are the same on every machine. Credentials are not
+# shipped — they are distributed alongside the paper.
+@pytest.mark.parametrize(
+    "key,expected",
+    [
+        ("BIOGNOSIA_MILVUS_PORT", "18110"),
+        ("BIOGNOSIA_NEO4J_URI", "bolt://127.0.0.1:18111"),
+        ("BIOGNOSIA_REDIS_HOST", "127.0.0.1"),
+        ("BIOGNOSIA_REDIS_PORT", "18112"),
+        ("BIOGNOSIA_ELASTICSEARCH_HOSTS", "http://127.0.0.1:18114"),
+    ],
+)
+def test_shipped_env_example_points_at_the_tunnel_ports(key, expected):
+    values = _env_example_values()
+    assert key in values, f"{key} missing from .env.example"
+    assert values[key] == expected
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "BIOGNOSIA_MILVUS_HOST",       # user:password@127.0.0.1
+        "BIOGNOSIA_NEO4J_USERNAME",
+        "BIOGNOSIA_NEO4J_PASSWORD",
+        "BIOGNOSIA_REDIS_PASSWORD",
+        "BIOGNOSIA_MONGODB_URI",       # user:password@127.0.0.1:18113
+        "BIOGNOSIA_LLM_API_KEY",
+    ],
+)
+def test_shipped_env_example_never_carries_a_real_credential(key):
+    """Guard against a credential leaking into the committed .env.example."""
+    values = _env_example_values()
+    assert key in values, f"{key} missing from .env.example"
+    assert PLACEHOLDER_RE.search(values[key]), (
+        f".env.example {key} is not a placeholder: {values[key]!r}"
+    )
+
+
+def test_shipped_env_example_is_configured_for_a_reasoning_model():
+    """gpt-5 rejects temperature and max_tokens; the shipped defaults must not
+    send either, and must set max_completion_tokens so that a max_tokens passed
+    by the pipeline is converted rather than forwarded."""
+    values = _env_example_values()
+    assert values.get("BIOGNOSIA_LLM_MODEL") == "gpt-5"
+    assert "BIOGNOSIA_LLM_TEMPERATURE" not in values
+    assert "BIOGNOSIA_LLM_TOP_P" not in values
+    assert "BIOGNOSIA_LLM_MAX_TOKENS" not in values
+    assert values.get("BIOGNOSIA_LLM_MAX_COMPLETION_TOKENS")

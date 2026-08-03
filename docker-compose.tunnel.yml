@@ -1,0 +1,92 @@
+name: biognosia-tunnel-client
+
+# Opens local TCP listeners that reach the shared Biognosia knowledge base over
+# wss://tunnel.tinnguyen-lab.com. Run this on your own machine, before running
+# the app; leave it running for as long as you are querying.
+#
+#   docker compose -f docker-compose.tunnel.yml up -d
+#   docker compose -f docker-compose.tunnel.yml down
+#
+# Once it is up, the databases are reachable on localhost at the ports the
+# shipped .env.example already points at:
+#
+#   Milvus         127.0.0.1:18110
+#   Neo4j          127.0.0.1:18111
+#   Redis          127.0.0.1:18112
+#   MongoDB        127.0.0.1:18113
+#   Elasticsearch  127.0.0.1:18114
+#
+# Three details that are easy to get wrong if you adapt this file:
+#   1. The binary path must be explicit (the image entrypoint is dumb-init only).
+#   2. -L must bind 0.0.0.0, not the default localhost — inside a container,
+#      localhost is the container itself, so the default bind is unreachable.
+#   3. Ports are published back to the host on 127.0.0.1 ONLY. That is
+#      deliberate: it keeps the tunnels off your network. It also means a
+#      containerised app cannot reach them at "localhost" — see the networks
+#      section at the bottom.
+#
+# "upstream" is a server-side alias. It is never resolved here; it is passed
+# through as an opaque string.
+
+x-client: &client
+  image: ghcr.io/erebe/wstunnel:latest
+  restart: unless-stopped
+  networks: [biognosia]
+
+services:
+  milvus:
+    <<: *client
+    ports: ["127.0.0.1:18110:18110"]
+    command: >
+      /home/app/wstunnel client
+      -L tcp://0.0.0.0:18110:upstream:18110
+      --http-upgrade-path-prefix tunnel/biognosia/milvus
+      wss://tunnel.tinnguyen-lab.com
+
+  neo4j:
+    <<: *client
+    ports: ["127.0.0.1:18111:18111"]
+    command: >
+      /home/app/wstunnel client
+      -L tcp://0.0.0.0:18111:upstream:18111
+      --http-upgrade-path-prefix tunnel/biognosia/neo4j
+      wss://tunnel.tinnguyen-lab.com
+
+  redis:
+    <<: *client
+    ports: ["127.0.0.1:18112:18112"]
+    command: >
+      /home/app/wstunnel client
+      -L tcp://0.0.0.0:18112:upstream:18112
+      --http-upgrade-path-prefix tunnel/biognosia/redis
+      wss://tunnel.tinnguyen-lab.com
+
+  mongodb:
+    <<: *client
+    ports: ["127.0.0.1:18113:18113"]
+    command: >
+      /home/app/wstunnel client
+      -L tcp://0.0.0.0:18113:upstream:18113
+      --http-upgrade-path-prefix tunnel/biognosia/mongodb
+      wss://tunnel.tinnguyen-lab.com
+
+  elasticsearch:
+    <<: *client
+    ports: ["127.0.0.1:18114:18114"]
+    command: >
+      /home/app/wstunnel client
+      -L tcp://0.0.0.0:18114:upstream:18114
+      --http-upgrade-path-prefix tunnel/biognosia/elasticsearch
+      wss://tunnel.tinnguyen-lab.com
+
+networks:
+  biognosia:
+    # Running the app on the host (the documented path)? Leave this as is.
+    #
+    # Running the app in a container? The published ports above are bound to
+    # 127.0.0.1 of the HOST, so your container cannot reach them at
+    # "localhost". Put your app on this network instead and address the
+    # tunnels by service name — milvus:18110, neo4j:18111, redis:18112,
+    # mongodb:18113, elasticsearch:18114 — or set `external: true` here and
+    # point it at your app's existing network.
+    driver: bridge

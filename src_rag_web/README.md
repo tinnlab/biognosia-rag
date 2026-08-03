@@ -354,8 +354,8 @@ configparser  # Built-in
 ## Related Documentation
 
 - **`../README.md`** — what the system is, the retrieval/rerank/citation
-  pipeline, requirements, the two ways to run it, and the full environment
-  variable reference.
+  pipeline, requirements, the quickstart, and the full environment variable
+  reference.
 - **`../config/rag-web.conf`** — every tunable, with inline commentary.
 
 ## License
