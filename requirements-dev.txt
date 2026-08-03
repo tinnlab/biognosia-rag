@@ -1,7 +1,11 @@
-# Test dependencies. The suite runs in MCP_TEST_MODE, so it needs the slim
-# runtime deps plus pytest/httpx:
-#   pip install -r requirements-test.txt -r requirements-dev.txt
+# Test dependencies — this is the file to install to run the suite:
+#
+#   pip install -r requirements-dev.txt
 #   pytest
+#
+# The suite runs in MCP_TEST_MODE and needs neither torch, a GPU, a database nor
+# an LLM, so the slim runtime deps below plus pytest/httpx are the whole story.
+# requirements-test.txt is pulled in from here; you never install it directly.
 -r requirements-test.txt
 pytest>=8.0
 httpx>=0.27
