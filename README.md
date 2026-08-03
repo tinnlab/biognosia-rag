@@ -10,7 +10,7 @@ citation for every claim, each resolving to the paper and passage it came from.
 You do not need to build or host the knowledge base, nor to ask us for access to
 it. It runs on our infrastructure; this repository ships a tunnel client that
 reaches it from your machine, and the read-only credentials are published in
-`.env.example`. What you provide is a GPU and your own OpenAI API key.
+`.env.example`. What you provide is a GPU and a free Groq API key.
 
 ---
 
@@ -60,11 +60,11 @@ This opens five local listeners that reach our databases over
 Leave it running while you query. Stop it with
 `docker compose -f docker-compose.tunnel.yml down`.
 
-We host these databases so that reproducing the paper does not require you to
-rebuild a very large corpus first, and we intend to keep them available to
-readers. Should an endpoint ever move, this repository and its README are
-updated with the current details — so if a connection stops working, pull the
-latest version and restart the tunnel.
+The lab hosts these databases so that reproducing the paper does not require
+rebuilding a very large corpus. They exist to support the paper rather than as
+permanent infrastructure, so access may end at some point; the repository
+carries the current details for as long as it is available, and we are glad to
+hear from anyone who needs access beyond that.
 
 > The tunnels are published on **`127.0.0.1` only**, deliberately — they are not
 > exposed to your network. One consequence: if you run *your* application inside
@@ -94,21 +94,36 @@ python -m nltk.downloader punkt punkt_tab stopwords \
 cp .env.example .env
 ```
 
-**You need to change exactly one line** — your OpenAI API key:
+**One line to fill in**: an API key for the language model.
+
+The knowledge-base settings are already done — **read-only and deliberately
+public**, published with the paper so anyone can reproduce our results, so there
+is no access to request and nothing there to edit.
+
+Generation is pre-configured against Groq, which serves OpenAI's open-weight
+`gpt-oss-120b` on a free tier:
 
 ```dotenv
-BIOGNOSIA_LLM_PROVIDER=openai
-BIOGNOSIA_LLM_MODEL=gpt-5
-BIOGNOSIA_LLM_API_KEY=<your-openai-api-key>
+BIOGNOSIA_LLM_PROVIDER=groq
+BIOGNOSIA_LLM_MODEL=openai/gpt-oss-120b
+BIOGNOSIA_LLM_BASE_URL=https://api.groq.com/openai/v1
+BIOGNOSIA_LLM_API_KEY=<your-groq-api-key>      # <- this one
 ```
 
-Leave it unedited and the run stops immediately saying so, rather than failing
-part-way through.
+#### Getting a free Groq API key
 
-The knowledge-base section above it is **already complete** — endpoints and
-credentials both. Those accounts are **read-only and deliberately public**: they
-are published with the paper so anyone can reproduce our results. There is
-nothing to request from us and no access to apply for.
+1. Sign up at [console.groq.com](https://console.groq.com) — the free tier is
+   enough to run the examples here.
+2. In the console, open **API Keys** and create one. It is shown once, so copy
+   it there and then.
+3. Paste it into `BIOGNOSIA_LLM_API_KEY` in your `.env`. Groq keys begin with
+   `gsk_`.
+
+Keep the key out of anything you commit — `.env` is gitignored for that reason.
+
+Prefer a different provider? Change all four `BIOGNOSIA_LLM_*` lines together.
+`BASE_URL` is required rather than optional: the provider setting chooses the
+client, not the endpoint, so on its own it would send your key to OpenAI.
 
 ### 5. Ask a question
 
@@ -226,7 +241,8 @@ given are read-only.
 
 **Credentials**
 
-- An OpenAI API key. This is the only credential you supply — the knowledge-base
+- A free [Groq](https://console.groq.com) API key for generation — the only one
+  you supply, and the quickstart walks you through it. The knowledge-base
   accounts are read-only, public, and already in `.env.example`.
 - A HuggingFace token — strongly recommended, not strictly required. None of the
   models below is gated, so anonymous download works, but the reranker starts
@@ -269,28 +285,32 @@ credentials. You should not need to touch any of these.
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `BIOGNOSIA_LLM_PROVIDER` | `openai` \| `groq` \| `anthropic` \| `ollama`. Use `openai` for any OpenAI-compatible endpoint. | `openai` |
-| `BIOGNOSIA_LLM_MODEL` | model name | `gpt-5` |
-| `BIOGNOSIA_LLM_API_KEY` | your key | — (required) |
-| `BIOGNOSIA_LLM_BASE_URL` | endpoint for non-OpenAI hosts; **must include `/v1`** | — |
+| `BIOGNOSIA_LLM_PROVIDER` | `openai` \| `groq` \| `anthropic` \| `ollama`. `openai` and `groq` share the same OpenAI-compatible client. | `groq` |
+| `BIOGNOSIA_LLM_MODEL` | model id, exactly as the provider spells it | `openai/gpt-oss-120b` |
+| `BIOGNOSIA_LLM_API_KEY` | API key | — (yours; see the quickstart) |
+| `BIOGNOSIA_LLM_BASE_URL` | where requests go; **must include `/v1`** | `https://api.groq.com/openai/v1` |
 | `BIOGNOSIA_LLM_TIMEOUT` | seconds per API call | `300` |
 | `BIOGNOSIA_LLM_ENABLE_COT` | `false` strips `<think>` blocks from answers | `true` |
-| `BIOGNOSIA_LLM_MAX_COMPLETION_TOKENS` | output cap for reasoning models | `8192` |
-| `BIOGNOSIA_LLM_TEMPERATURE` / `_TOP_P` / `_MAX_TOKENS` | **leave unset for gpt-5** — see below | unset |
+| `BIOGNOSIA_LLM_MAX_COMPLETION_TOKENS` | output cap | `8192` |
+| `BIOGNOSIA_LLM_TEMPERATURE` / `_TOP_P` / `_MAX_TOKENS` | left unset — see below | unset |
 
-> **gpt-5 is a reasoning model: it rejects `temperature` and rejects
-> `max_tokens`.** The shipped `.env.example` is already correct for this, and
-> the mechanism is worth understanding before you change it. An *unset*
-> parameter here is not merely omitted from the config — it also causes the
-> value the pipeline tries to pass to be dropped, so the parameter never reaches
-> the API. That is why `TEMPERATURE` and `TOP_P` stay commented out even though
-> parts of the pipeline ask for `temperature=0.0`. Likewise, setting
-> `MAX_COMPLETION_TOKENS` *converts* any `max_tokens` the pipeline passes into
-> `max_completion_tokens`; leaving both unset would let the rejected parameter
-> through. Switching to a non-reasoning model is the only reason to set them.
+Three details worth knowing before you change any of these:
 
-If `BIOGNOSIA_LLM_API_KEY` is unset, the provider falls back to `OPENAI_API_KEY`
-/ `GROQ_API_KEY` / `ANTHROPIC_API_KEY`, then `LLM_API_KEY` — worth knowing if you
+- **The provider does not choose the endpoint.** `openai` and `groq` both select
+  the same OpenAI-compatible client, and neither sets a URL of its own, so
+  `BASE_URL` is what actually routes the request. Change the provider without it
+  and your key goes to `api.openai.com`.
+- **An unset parameter is dropped, not merely defaulted.** Leaving `TEMPERATURE`
+  and `TOP_P` unset means the values parts of the pipeline try to pass
+  (`temperature=0.0`) never reach the API either. That is deliberate: it keeps
+  the defaults working with any model, including reasoning models that reject
+  `temperature` outright.
+- **`MAX_COMPLETION_TOKENS` converts rather than coexists.** Setting it turns any
+  `max_tokens` the pipeline passes into `max_completion_tokens`, so the
+  deprecated parameter is never sent. Leaving both unset would let it through.
+
+If `BIOGNOSIA_LLM_API_KEY` is unset, the provider falls back to `GROQ_API_KEY` /
+`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`, then `LLM_API_KEY` — worth knowing if you
 already have one of those exported, as it will be used silently.
 
 **GPU, models and paths**

@@ -280,19 +280,45 @@ def test_stores_without_auth_ship_no_password(key):
     assert key not in _env_example_values()
 
 
-def test_the_only_value_a_user_supplies_is_their_llm_key():
-    """Everything else is filled in, so the API key must remain a placeholder —
-    validate_llm_config rejects it if left unedited."""
+def test_only_the_llm_key_is_left_for_the_user_to_fill_in():
+    """Everything is pre-set except the API key, which must stay a placeholder:
+    a live key would be caught by GitHub push protection and scraped once the
+    repository is public. validate_llm_config rejects it if left unedited."""
     values = _env_example_values()
+    for key in ("BIOGNOSIA_LLM_PROVIDER", "BIOGNOSIA_LLM_MODEL", "BIOGNOSIA_LLM_BASE_URL"):
+        assert values.get(key), f"{key} missing from .env.example"
+        assert not PLACEHOLDER_RE.search(values[key]), (
+            f".env.example {key} is still a placeholder: {values[key]!r}"
+        )
     assert PLACEHOLDER_RE.search(values["BIOGNOSIA_LLM_API_KEY"])
 
 
-def test_shipped_env_example_is_configured_for_a_reasoning_model():
-    """gpt-5 rejects temperature and max_tokens; the shipped defaults must not
-    send either, and must set max_completion_tokens so that a max_tokens passed
-    by the pipeline is converted rather than forwarded."""
+def test_no_live_api_key_is_committed():
+    """Belt and braces: no provider key prefix may appear in .env.example."""
+    text = (CONF.resolve().parents[1] / ".env.example").read_text()
+    for prefix in ("gsk_", "sk-", "hf_"):
+        assert prefix not in text, f".env.example contains a {prefix!r} credential"
+
+
+def test_llm_base_url_is_set_because_the_provider_does_not_route():
+    """provider=groq selects the OpenAI-compatible client but sets no endpoint,
+    so without BASE_URL the key would be sent to api.openai.com."""
     values = _env_example_values()
-    assert values.get("BIOGNOSIA_LLM_MODEL") == "gpt-5"
+    assert values["BIOGNOSIA_LLM_PROVIDER"] == "groq"
+    assert values["BIOGNOSIA_LLM_BASE_URL"] == "https://api.groq.com/openai/v1"
+
+
+def test_llm_model_id_carries_the_provider_prefix():
+    """Groq spells it openai/gpt-oss-120b; the bare name is not a valid id."""
+    assert _env_example_values()["BIOGNOSIA_LLM_MODEL"] == "openai/gpt-oss-120b"
+
+
+def test_shipped_env_example_sends_no_rejected_sampling_parameters():
+    """Unset means dropped, not defaulted: leaving temperature/top_p unset keeps
+    the pipeline's own temperature=0.0 from reaching the API, and setting
+    max_completion_tokens converts any max_tokens it passes rather than
+    forwarding a parameter Groq treats as deprecated."""
+    values = _env_example_values()
     assert "BIOGNOSIA_LLM_TEMPERATURE" not in values
     assert "BIOGNOSIA_LLM_TOP_P" not in values
     assert "BIOGNOSIA_LLM_MAX_TOKENS" not in values
