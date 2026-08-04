@@ -349,11 +349,18 @@ already have one of those exported, as it will be used silently.
 
 ## Running on macOS
 
-If you want to run Biognosia on your macOS machine, you can — but expect it to
-be slow, and treat it as a way to explore the code rather than to do real work.
-macOS has no CUDA, so the two cross-encoder rerankers, which are the expensive
-half of the pipeline, fall back to the CPU. The quickstart above assumes Linux
-and needs three changes.
+**macOS is not a supported platform. Use Linux with a CUDA GPU for any real
+work.**
+
+macOS has no CUDA, so the two cross-encoder rerankers — the expensive half of
+the pipeline — run on the CPU no matter what you configure. The three embedding
+models can use Metal, but they were never the bottleneck. The pipeline does run
+and does return the same grounded answers, but reranking is enormously slower
+than on the supported path, and every query pays that cost. Treat it as a way to
+read the code and watch the pipeline work end to end, not as a way to do
+research.
+
+If you are going to run it anyway, the quickstart needs three changes.
 
 **1. Install torch from PyPI, not the CUDA index.** The `cu124` wheel index in
 step 3 has no macOS builds, so that command fails with "no matching
@@ -376,29 +383,63 @@ BIOGNOSIA_RERANK_DEVICE=cpu
 BIOGNOSIA_RERANK_STAGE1_DEVICE=cpu
 ```
 
-**3. Shrink the rerank workload.** The defaults are sized for a data-centre GPU
-and will exhaust a laptop. Each worker is a separate process holding its own
-model copy, and on macOS that is *system RAM* rather than VRAM — the ~10 GB
-resident and ~84 GB peak quoted in [sizing](#choosing-a-gpu-and-sizing-the-rerank-pools)
-both come out of the same memory your machine runs on. Start small:
+**3. Cut the rerank workload.** The defaults are sized for a data-centre GPU.
+The [sizing](#choosing-a-gpu-and-sizing-the-rerank-pools) section tells you to
+reduce `batch_size` first, because on a GPU the batch settings drive VRAM. On
+the CPU that ordering does not apply: what costs you is how many documents reach
+the second-stage reranker and how long a span of each one it reads. Batch size
+is close to irrelevant by comparison. In `config/rag-web.conf`:
+
+| Setting | Default | macOS | Why |
+|---|---|---|---|
+| `stage1_top_k` | 1024 | 64 | documents the strong reranker must score |
+| `max_length` (`[rerank]`) | 1024 | 512 | span of each one it reads; cost grows faster than linearly |
+| `stage1_max_length` | 512 | 256 | same, for the cheap first pass |
+| `candidate_top_k` | 2000 | 200 | size of the pool feeding stage 1 |
+| `batch_size`, `stage1_batch_size` | 512 | 64 | keep them modest; they are not the lever here |
+
+The first two are what actually decide how long a query takes. Lower them
+further if you want faster answers and can accept that the reranker chooses from
+a shallower pool — the final context uses only about twenty passages, so there
+is room above that before recall suffers.
+
+**Do not drop the worker pools to 1.** Each rerank worker is a separate process
+holding its own model copy, and on macOS that comes out of system RAM rather
+than VRAM — but with the settings above the whole pipeline stays comfortably
+inside a laptop's memory, and a single worker just serialises work that has no
+reason to be serial. Keep them at 4:
 
 ```dotenv
-BIOGNOSIA_RERANK_NUM_WORKERS=1
-BIOGNOSIA_RERANK_STAGE1_NUM_WORKERS=1
+BIOGNOSIA_RERANK_NUM_WORKERS=4
+BIOGNOSIA_RERANK_STAGE1_NUM_WORKERS=4
 ```
 
-and in `config/rag-web.conf` cut the batch settings, which dominate the peak —
-`stage1_batch_size` and `batch_size` from 512 down to 16-32 first, then
-`candidate_top_k` from 2000 and `stage1_top_k` from 1024 to a few hundred.
+Then pin the per-worker thread count when you run, so the pools do not
+oversubscribe the CPU — left alone, every worker starts a thread pool sized for
+the whole machine and they fight each other:
+
+```bash
+OMP_NUM_THREADS=3 MKL_NUM_THREADS=3 python examples/query.py "..."
+```
+
+Choose the value so that workers × threads is roughly your core count.
+
+One more setting worth lowering, unrelated to speed: `query_batch_size` in
+`[second_stage_entity_discovery]`. At its default of 200 the entity-discovery
+step asks several Milvus collections at once for every field of every hit,
+including the raw vectors, and the combined response is large enough to
+intermittently break the tunnel connection with `GOAWAY … frame length
+exceeded`. The query then stalls rather than failing cleanly. Setting it to 25
+avoids that.
 
 Everything else works unchanged: the tunnel client runs under Docker Desktop,
 and the language model is an API call rather than a local model, so generation
 is unaffected.
 
-> **Not verified.** The Linux/CUDA path is what we test and measure; the macOS
-> path above follows from how the code selects devices, not from a run we have
-> done. Expect reranking to take minutes rather than seconds, and please tell us
-> what you hit.
+> The Linux/CUDA path is the one we test, measure and support. The macOS path
+> above has been run end to end on Apple Silicon and returns correct, cited
+> answers, but it is not a configuration we maintain, and how slow it feels will
+> depend entirely on your machine. Please tell us what you hit.
 
 ## Choosing a GPU and sizing the rerank pools
 
